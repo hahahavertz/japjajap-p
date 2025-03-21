@@ -16,10 +16,15 @@ const controls = {
 
 // Score tracking and game state
 let sequenceScore = 0; // Tracks correct sequences completed
+let playerLives = 10; // Add player lives
 let gameStartTime = Date.now();
 let gameOver = false;
 let gameWon = false;
 let gameStarted = false; // Track if the game has started
+let countdownActive = false; // Track if countdown is active
+let countdownValue = 3; // Start countdown from 3
+let countdownStartTime = 0; // When countdown began
+let ballsVisible = 0; // Track how many balls are visible
 const GAME_TIME_LIMIT = 60000; // 1 minute in milliseconds
 
 // Color sequence mechanics
@@ -367,7 +372,7 @@ class Monster {
         this.nextColorIndex = 1;
         this.colorTransition = 0; // 0 to 1 for color transition
         this.colorChangeSpeed = 0.01;
-        this.speed = 5.5;
+        this.speed = 4.5; // This is the value you need to reduce
         this.trail = [];
         this.maxTrailLength = 15;
         this.rotation = 0;
@@ -509,10 +514,8 @@ class Monster {
             if (distance < this.radius + ball.radius) {
                 ball.captured = true;
                 
-                // Generate sequence if it doesn't exist yet
-                if (currentSequence.length === 0) {
-                    generateNewSequence();
-                    // Don't increment playerProgress or count this coin
+                // Skip game mechanics during countdown but still show particle effects
+                if (countdownActive) {
                     addCoinParticles(ball.x, ball.y);
                     setTimeout(() => {
                         ball.respawn();
@@ -564,6 +567,17 @@ class Monster {
                     // Wrong color - reset progress
                     playerProgress = 0;
                     
+                    // Deduct a life
+                    playerLives--;
+                    
+                    // Check if player has lost all lives
+                    if (playerLives <= 0) {
+                        gameOver = true;
+                        gameWon = false;
+                        // Play lose sound
+                        playSound(sounds.gameLose, 1.0);
+                    }
+                    
                     // Add "broken" particles for sequence break
                     for (let i = 0; i < 40; i++) {
                         const size = 2 + Math.random() * 4;
@@ -592,9 +606,10 @@ class Monster {
             return;
         }
 
-        // Check for time limit
-        if (Date.now() - gameStartTime > GAME_TIME_LIMIT) {
+        // Only check time limit if not in countdown
+        if (!countdownActive && Date.now() - gameStartTime > GAME_TIME_LIMIT) {
             gameOver = true;
+            gameWon = false;
             // Play lose sound
             playSound(sounds.gameLose, 1.0);
             return;
@@ -743,12 +758,12 @@ const sounds = {
     // Game state sounds
     gameStart: new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'),
     gameWin: new Audio('https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3'),
-    gameLose: new Audio('https://assets.mixkit.co/active_storage/sfx/2658/2658-preview.mp3'),
+    gameLose: new Audio('https://dm0qx8t0i9gc9.cloudfront.net/previews/audio/BsTwCwBHBjzwub4i4/cartoon-disappoint-fanfares_zkCJGHEu_NWM.mp3'),
     
     // Gameplay sounds
-    sequenceComplete: new Audio('https://assets.mixkit.co/active_storage/sfx/217/217-preview.mp3'), // Game experience level increased sound
-    correctBall: new Audio('https://assets.mixkit.co/active_storage/sfx/2648/2648-preview.mp3'), // Using old sequence break for correct ball
-    wrongBall: new Audio('https://assets.mixkit.co/active_storage/sfx/565/565-preview.mp3'), // Wrong answer fail notification - very short (under 1 sec)
+    sequenceComplete: new Audio('https://dm0qx8t0i9gc9.cloudfront.net/previews/audio/BsTwCwBHBjzwub4i4/audioblocks-fairy-glitter-shine-4_HZmT-umYw8_NWM.mp3'), // Game experience level increased sound
+    correctBall: new Audio('https://dm0qx8t0i9gc9.cloudfront.net/previews/audio/BsTwCwBHBjzwub4i4/audioblocks-vibraphone-ui-alert-3-chat-sms-cellphone-chat-sms-cellphone_rYVbezL0DI_NWM.mp3'), // Using old sequence break for correct ball
+    wrongBall: new Audio('https://dm0qx8t0i9gc9.cloudfront.net/previews/audio/BsTwCwBHBjzwub4i4/audioblocks-buzzer-error_rFJmBWfLCDI_NWM.mp3'), // Wrong answer fail notification - very short (under 1 sec)
     
     // Background music
     bgMusic: new Audio('https://assets.mixkit.co/active_storage/sfx/209/209-preview.mp3')
@@ -787,22 +802,35 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         
         if (!gameStarted) {
-            // Start game
-            gameStarted = true;
-            initializeGame();
+            // Stop any previous game lose sound that might be playing
+            if (sounds.gameLose) {
+                sounds.gameLose.pause();
+                sounds.gameLose.currentTime = 0;
+            }
+            
+            // Start countdown instead of game immediately
+            startCountdown();
             return;
         }
         
         if (gameOver) {
+            // Stop any game lose sound that might be playing
+            if (sounds.gameLose) {
+                sounds.gameLose.pause();
+                sounds.gameLose.currentTime = 0;
+            }
+            
             // Reset game and go back to title screen instead of restarting immediately
             gameStarted = false;
             gameOver = false;
+            playerLives = 10; // Reset lives when returning to title screen
             particles = [];
             return;
         }
     }
 
-    if (gameOver || !gameStarted) return;
+    // Allow player movement during countdown, but still block other inputs
+    if (gameOver || (!gameStarted && !countdownActive)) return;
 
     switch (e.key) {
         case 'ArrowUp': controls.up = true; break;
@@ -829,157 +857,185 @@ window.addEventListener('keyup', (e) => {
     }
 });
 
-// Modify draw instructions to include the sequence bar and win condition
+// Modify draw instructions function to display countdown without obscuring gameplay
 function drawInstructions() {
-    // Only draw sequence bar if a sequence exists
-    if (currentSequence.length > 0) {
-        // Draw the sequence bar at the top
-        const barHeight = 70;
-        const barWidth = canvas.width;
-        const slotSize = 60;
-        const slotPadding = 10;
-        
-        // Draw sequence bar background
-        const barGradient = ctx.createLinearGradient(0, 0, barWidth, barHeight);
-        barGradient.addColorStop(0, 'rgba(13, 17, 23, 0.9)');
-        barGradient.addColorStop(0.5, 'rgba(22, 27, 34, 0.9)');
-        barGradient.addColorStop(1, 'rgba(13, 17, 23, 0.9)');
-        
-        ctx.fillStyle = barGradient;
-        ctx.fillRect(0, 0, barWidth, barHeight);
-        
-        // Draw sequence slots
-        const startX = (barWidth - (SEQUENCE_LENGTH * (slotSize + slotPadding))) / 2;
-        
-        for (let i = 0; i < SEQUENCE_LENGTH; i++) {
-            const x = startX + i * (slotSize + slotPadding);
-            const y = (barHeight - slotSize) / 2;
-            
-            // Draw slot background (darker if not reached yet)
-            ctx.beginPath();
-            ctx.roundRect(x, y, slotSize, slotSize, 10);
-            
-            if (i < playerProgress) {
-                // Completed slot - brighter
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            } else if (i === playerProgress) {
-                // Current slot - highlighted with pulse
-                const pulse = 0.2 + Math.abs(Math.sin(Date.now() * 0.005)) * 0.3;
-                ctx.fillStyle = `rgba(255, 255, 255, ${pulse})`;
-            } else {
-                // Future slot - dimmer
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            }
-            
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Draw color circle
-            ctx.beginPath();
-            ctx.arc(x + slotSize/2, y + slotSize/2, slotSize/2 - 10, 0, Math.PI * 2);
-            ctx.fillStyle = currentSequence[i];
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Draw glow for active slot
-            if (i === playerProgress) {
-                ctx.beginPath();
-                ctx.arc(x + slotSize/2, y + slotSize/2, slotSize/2 - 5, 0, Math.PI * 2);
-                const glowGradient = ctx.createRadialGradient(
-                    x + slotSize/2, y + slotSize/2, slotSize/2 - 15,
-                    x + slotSize/2, y + slotSize/2, slotSize/2
-                );
-                glowGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-                glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
-                ctx.fillStyle = glowGradient;
-                ctx.fill();
-            }
-        }
-        
-        // Draw sequence counter
-        ctx.fillStyle = '#c9d1d9';
-        ctx.font = '16px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.fillText(`SEQUENCE: ${sequenceScore}/${SEQUENCE_WIN_SCORE}`, canvas.width / 2, barHeight + 25);
-        
-        // Time display
-        const elapsedSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
-        const timeRemaining = Math.max(0, 60 - elapsedSeconds);
-        const minutes = Math.floor(timeRemaining / 60);
-        const seconds = timeRemaining % 60;
-        
-        // Create gradient for time display
-        const timeGradient = ctx.createLinearGradient(10, 10 + barHeight, 150, 60 + barHeight);
-        timeGradient.addColorStop(0, 'rgba(88, 166, 255, 0.8)');
-        timeGradient.addColorStop(1, 'rgba(35, 134, 54, 0.8)');
-        
-        // Draw time background
+    if (countdownActive) {
+        // Draw countdown in a way that doesn't obscure gameplay
+        // Draw only the countdown number with glow effect
         ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(10, 10 + barHeight, 140, 60, 15);
-        ctx.fillStyle = timeGradient;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(201, 209, 217, 0.6)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
         
-        // Draw time text with glow
-        ctx.shadowColor = 'rgba(201, 209, 217, 0.7)';
-        ctx.shadowBlur = 10;
-        
-        ctx.fillStyle = '#c9d1d9';
-        ctx.font = '16px "Press Start 2P"';
+        // Large countdown number with drastically reduced opacity (50% of previous, which was already at 60%)
+        ctx.shadowColor = 'rgba(88, 166, 255, 0.27)'; // 0.54 * 0.5 = 0.27
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = 'rgba(88, 166, 255, 0.21)'; // 0.42 * 0.5 = 0.21
+        ctx.font = '120px "Press Start 2P"';
         ctx.textAlign = 'center';
-        ctx.fillText(`TIME`, 80, 35 + barHeight);
+        ctx.textBaseline = 'middle';
         
-        // Make time red if less than 10 seconds
+        // Add pulsing effect
+        const elapsedTime = Date.now() - countdownStartTime;
+        const secondsElapsed = Math.floor(elapsedTime / 1000);
+        const currentCount = Math.max(1, countdownValue - secondsElapsed);
+        
+        // Calculate pulse based on fraction of second
+        const fractionOfSecond = (elapsedTime % 1000) / 1000;
+        const pulse = 1 + Math.sin(fractionOfSecond * Math.PI) * 0.2;
+        
+        ctx.font = `${120 * pulse}px "Press Start 2P"`;
+        ctx.fillText(currentCount.toString(), canvas.width / 2, canvas.height / 2);
+        
+        // Add "GET READY" text above with drastically reduced opacity
+        ctx.font = '30px "Press Start 2P"';
+        ctx.fillStyle = 'rgba(88, 166, 255, 0.21)'; // 0.42 * 0.5 = 0.21
+        ctx.fillText('GET READY!', canvas.width / 2, canvas.height / 3);
+        
+        ctx.restore();
+        
+        // Continue to display the game UI
+    }
+    
+    // Always draw the sequence bar, regardless of whether we're in countdown or not
+    // (a sequence is always generated at start of game)
+    // Draw the sequence bar at the top
+    const barHeight = 70;
+    const barWidth = canvas.width;
+    const slotSize = 60;
+    const slotPadding = 10;
+    
+    // Draw sequence bar background
+    const barGradient = ctx.createLinearGradient(0, 0, barWidth, barHeight);
+    barGradient.addColorStop(0, 'rgba(13, 17, 23, 0.9)');
+    barGradient.addColorStop(0.5, 'rgba(22, 27, 34, 0.9)');
+    barGradient.addColorStop(1, 'rgba(13, 17, 23, 0.9)');
+    
+    ctx.fillStyle = barGradient;
+    ctx.fillRect(0, 0, barWidth, barHeight);
+    
+    // Draw both time and lives display on left side of the bar
+    const timeX = 20;
+    const timeY = barHeight / 2 - 12; // Move up for time
+    const livesY = barHeight / 2 + 12; // Move down for lives
+    
+    // Calculate time based on gameStartTime, but show placeholder during countdown
+    const elapsedSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
+    const timeRemaining = Math.max(0, 60 - elapsedSeconds);
+    const minutes = Math.floor(timeRemaining / 60);
+    const seconds = timeRemaining % 60;
+    
+    ctx.save();
+    ctx.shadowColor = 'rgba(88, 166, 255, 0.7)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#c9d1d9';
+    ctx.font = '16px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    // Display placeholder during countdown
+    if (countdownActive) {
+        ctx.fillText(`TIME: 01:00`, timeX, timeY);
+    } else {
+        // Make time red if less than 10 seconds (no scaling)
         if (timeRemaining <= 10) {
             ctx.fillStyle = '#f85149';
-            // Pulsing effect for low time
-            if (timeRemaining <= 5) {
-                const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.2;
-                ctx.font = `${16 * pulse}px "Press Start 2P"`;
-            }
+        }
+        ctx.fillText(`TIME: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`, timeX, timeY);
+    }
+    
+    // Draw lives counter below time on left side
+    ctx.shadowColor = 'rgba(248, 81, 73, 0.7)';
+    ctx.fillStyle = '#c9d1d9';
+    
+    // Make lives red if low (no scaling)
+    if (playerLives <= 3) {
+        ctx.fillStyle = '#f85149';
+    }
+    ctx.fillText(`LIVES: ${playerLives}`, timeX, livesY);
+    ctx.restore();
+    
+    // Draw sequence slots in the center
+    const startX = (barWidth - (SEQUENCE_LENGTH * (slotSize + slotPadding))) / 2;
+    
+    for (let i = 0; i < SEQUENCE_LENGTH; i++) {
+        const x = startX + i * (slotSize + slotPadding);
+        const y = (barHeight - slotSize) / 2;
+        
+        // Draw slot background with better differentiation
+        ctx.beginPath();
+        ctx.roundRect(x, y, slotSize, slotSize, 10);
+        
+        if (i < playerProgress) {
+            // Completed slot - green with higher opacity
+            ctx.fillStyle = 'rgba(35, 134, 54, 0.6)'; // GitHub green
+        } else if (i === playerProgress) {
+            // Current slot - highlighted with pulse and bright gold
+            const pulse = 0.4 + Math.abs(Math.sin(Date.now() * 0.005)) * 0.5;
+            ctx.fillStyle = `rgba(255, 223, 0, ${pulse})`; // Bright gold
+        } else {
+            // Future slot - darker with red tint
+            ctx.fillStyle = 'rgba(248, 81, 73, 0.2)'; // GitHub red (more subtle)
         }
         
-        ctx.fillText(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`, 80, 55 + barHeight);
+        ctx.fill();
         
-        ctx.shadowBlur = 0;
-        ctx.restore();
-    } else {
-        // If no sequence exists yet, just show a simple prompt
-        const elapsedSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
-        const timeRemaining = Math.max(0, 60 - elapsedSeconds);
-        const minutes = Math.floor(timeRemaining / 60);
-        const seconds = timeRemaining % 60;
+        // Different border styles for different states
+        if (i < playerProgress) {
+            // Completed - solid green border
+            ctx.strokeStyle = 'rgba(35, 134, 54, 0.9)';
+            ctx.lineWidth = 3;
+        } else if (i === playerProgress) {
+            // Current - animated gold border
+            ctx.strokeStyle = `rgba(255, 223, 0, ${0.7 + Math.sin(Date.now() * 0.01) * 0.3})`;
+            ctx.lineWidth = 4;
+        } else {
+            // Future - subtle red border
+            ctx.strokeStyle = 'rgba(248, 81, 73, 0.5)';
+            ctx.lineWidth = 2;
+        }
+        ctx.stroke();
         
-        // Draw time in top-right corner
-        ctx.save();
-        ctx.shadowColor = 'rgba(201, 209, 217, 0.7)';
-        ctx.shadowBlur = 10;
+        // Draw color circle - use current sequence
+        ctx.beginPath();
+        ctx.arc(x + slotSize/2, y + slotSize/2, slotSize/2 - 10, 0, Math.PI * 2);
+        ctx.fillStyle = currentSequence[i] || '#333333'; // Fallback color if needed
+        ctx.fill();
         
-        ctx.fillStyle = '#c9d1d9';
-        ctx.font = '16px "Press Start 2P"';
-        ctx.textAlign = 'right';
-        ctx.fillText(`TIME: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`, canvas.width - 20, 30);
+        // Different borders for the inner circles too
+        if (i < playerProgress) {
+            // Completed - check mark or indication
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 3;
+        } else if (i === playerProgress) {
+            // Current - pulsing white border
+            const pulseFactor = 0.6 + Math.sin(Date.now() * 0.01) * 0.4;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${pulseFactor})`;
+            ctx.lineWidth = 4;
+        } else {
+            // Future - dimmer border
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 2;
+        }
+        ctx.stroke();
         
-        // Show prompt to collect any coin to start
-        ctx.font = '14px "Press Start 2P"';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#58a6ff';
-        
-        // Add pulse effect
-        const pulse = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
-        ctx.globalAlpha = pulse;
-        ctx.fillText('COLLECT ANY COIN TO START SEQUENCE', canvas.width / 2, 30);
-        
-        ctx.shadowBlur = 0;
-        ctx.restore();
+        // Draw special glow for active slot
+        if (i === playerProgress) {
+            ctx.beginPath();
+            ctx.arc(x + slotSize/2, y + slotSize/2, slotSize/2 - 5, 0, Math.PI * 2);
+            const glowGradient = ctx.createRadialGradient(
+                x + slotSize/2, y + slotSize/2, slotSize/2 - 15,
+                x + slotSize/2, y + slotSize/2, slotSize/2
+            );
+            glowGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+            glowGradient.addColorStop(1, 'rgba(255, 223, 0, 0.7)'); // Golden glow
+            ctx.fillStyle = glowGradient;
+            ctx.fill();
+        }
     }
+    
+    // Draw sequence counter below the slots
+    ctx.fillStyle = '#c9d1d9';
+    ctx.font = '14px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText(`SEQUENCE: ${sequenceScore}/${SEQUENCE_WIN_SCORE}`, canvas.width / 2, barHeight + 15);
 
     if (gameOver) {
         // Draw game over screen with gradient background
@@ -1044,7 +1100,13 @@ function drawInstructions() {
             ctx.font = `${36 * pulse}px "Press Start 2P"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('TIME UP!', canvas.width / 2, canvas.height / 2 - 60);
+            
+            // Change the text based on how the player lost
+            if (playerLives <= 0) {
+                ctx.fillText('YOU ARE DEAD', canvas.width / 2, canvas.height / 2 - 60);
+            } else {
+                ctx.fillText('TIME UP!', canvas.width / 2, canvas.height / 2 - 60);
+            }
         }
         ctx.shadowBlur = 20;
         ctx.restore();
@@ -1069,7 +1131,7 @@ function drawInstructions() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('PRESS SPACE', canvas.width / 2, canvas.height / 2 + 70);
-        ctx.fillText('TO RETURN TO TITLE', canvas.width / 2, canvas.height / 2 + 100);
+        ctx.fillText('TO RESTART', canvas.width / 2, canvas.height / 2 + 100);
         ctx.restore();
     }
 }
@@ -1109,40 +1171,6 @@ function drawTitleScreen() {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Draw title with glow
-    ctx.save();
-    ctx.shadowColor = 'rgba(88, 166, 255, 0.8)';
-    ctx.shadowBlur = 20;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    
-    ctx.fillStyle = '#58a6ff';
-    ctx.font = '70px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    // Add pulsing effect to title
-    const pulse = 1 + Math.sin(Date.now() * 0.003) * 0.1;
-    ctx.font = `${70 * pulse}px "Press Start 2P", monospace`;
-    ctx.fillText('JAPJAPJAP:P', canvas.width / 2, canvas.height / 3);
-    ctx.restore();
-    
-    // Draw prompt with pulsing effect
-    ctx.save();
-    ctx.shadowColor = 'rgba(35, 134, 54, 0.7)';
-    ctx.shadowBlur = 15;
-    
-    ctx.fillStyle = '#238636';
-    ctx.font = '24px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    // Pulse the "Press Space" text
-    const promptPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
-    ctx.globalAlpha = promptPulse;
-    ctx.fillText('PRESS SPACE TO START', canvas.width / 2, canvas.height * 0.7);
-    ctx.restore();
-    
     // Draw colorful particles in the background for visual effect
     for (let i = 0; i < 3; i++) {
         const x = Math.random() * canvas.width;
@@ -1159,6 +1187,94 @@ function drawTitleScreen() {
         }
         
         particles.push(new Particle(x, y, colorRGB, 2, 3 + Math.random() * 3));
+    }
+    
+    // Draw a green frame to represent the game area
+    ctx.save();
+    ctx.strokeStyle = '#238636';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+    ctx.restore();
+    
+    // Center position for both elements
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Draw prompt with pulsing effect - position below the center
+    ctx.save();
+    ctx.shadowColor = 'rgba(35, 134, 54, 0.7)';
+    ctx.shadowBlur = 15;
+    
+    ctx.fillStyle = '#238636';
+    ctx.font = '24px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Pulse the "Press Space" text
+    const promptPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    ctx.globalAlpha = promptPulse;
+    // Position the prompt text at center + 80 pixels down
+    ctx.fillText('PRESS SPACE TO START', centerX, centerY + 80);
+    ctx.restore();
+    
+    // Draw title with glow and color changing effect - position it above the prompt
+    ctx.save();
+    
+    // Create color cycling effect similar to the monster
+    const titleColorIndex = Math.floor((Date.now() * 0.001) % 5);
+    const nextTitleColorIndex = (titleColorIndex + 1) % 5;
+    const titleColorTransition = (Date.now() * 0.001) % 1;
+    
+    // Get colors from the same palette as the monster
+    const titleColors = ['#58a6ff', '#238636', '#f85149', '#c9d1d9', '#f0883e'];
+    
+    // Interpolate between colors
+    const currentColor = hexToRgb(titleColors[titleColorIndex]);
+    const nextColor = hexToRgb(titleColors[nextTitleColorIndex]);
+    
+    const r = Math.floor(currentColor.r + (nextColor.r - currentColor.r) * titleColorTransition);
+    const g = Math.floor(currentColor.g + (nextColor.g - currentColor.g) * titleColorTransition);
+    const b = Math.floor(currentColor.b + (nextColor.b - currentColor.b) * titleColorTransition);
+    
+    const titleColor = `rgb(${r}, ${g}, ${b})`;
+    
+    // Position the title just above the prompt text
+    const yPos = centerY - 20;
+    
+    // Create 3D effect by adding multiple shadows with offsets
+    // Deeper shadow layers first (drawn first so they appear behind)
+    ctx.save();
+    for (let i = 6; i > 0; i--) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.5 - i * 0.05})`;
+        ctx.font = '80px "Press Start 2P", monospace'; // Smaller font size
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("JAPJAPJAP:P", centerX + i, yPos + i);
+    }
+    ctx.restore();
+    
+    // Make the title add 3D effect - draw on top of all
+    ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.8)`;
+    ctx.shadowBlur = 20;
+    
+    // Add pulsing effect to title
+    const pulse = 1 + Math.sin(Date.now() * 0.003) * 0.1;
+    ctx.font = `${80 * pulse}px "Press Start 2P", monospace`; // Smaller font size
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Draw the main title on top - this is the frontmost layer
+    ctx.fillStyle = titleColor;
+    ctx.fillText("JAPJAPJAP:P", centerX, yPos);
+    
+    ctx.restore();
+    
+    // Helper function to convert hex color to RGB
+    function hexToRgb(hex) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return { r, g, b };
     }
 }
 
@@ -1177,27 +1293,67 @@ function initializeGame() {
     gameOver = false;
     gameWon = false;
     sequenceScore = 0;
-    gameStartTime = Date.now();
+    playerLives = 10; // Reset player lives to initial value
+    // gameStartTime already set at the end of countdown
     particles = [];
     
     // Initialize empty sequence and reset progress
     currentSequence = [];
     playerProgress = 0;
     
-    // Play game start sound
-    playSound(sounds.gameStart);
+    // Stop any sounds that might be playing
+    Object.values(sounds).forEach(sound => {
+        if (sound && sound.pause) {
+            sound.pause();
+            sound.currentTime = 0;
+        }
+    });
+}
+
+// Add particle effects when collecting coins
+function addCoinParticles(x, y) {
+    const coinColors = walls.find(wall => wall.x === x && wall.y === y)?.color || '#FFDD00';
+    let colorRGB = '255, 221, 0'; // Default
     
-    // Ensure background music is playing
-    if (musicPlaying && sounds.bgMusic.paused && !soundMuted) {
-        sounds.bgMusic.currentTime = 0;
-        sounds.bgMusic.play().catch(err => console.log("Music play error:", err));
+    if (coinColors.startsWith('#')) {
+        const r = parseInt(coinColors.slice(1, 3), 16);
+        const g = parseInt(coinColors.slice(3, 5), 16);
+        const b = parseInt(coinColors.slice(5, 7), 16);
+        colorRGB = `${r}, ${g}, ${b}`;
     }
+    
+    for (let i = 0; i < 30; i++) {
+        const speed = 2 + Math.random() * 3;
+        const size = 3 + Math.random() * 4;
+        particles.push(new Particle(x, y, colorRGB, speed, size));
+    }
+}
+
+// Modify function to start the countdown and generate a sequence immediately
+function startCountdown() {
+    // Play a countdown sound if available
+    playSound(sounds.gameStart, 0.5);
+    
+    countdownActive = true;
+    countdownValue = 3;
+    countdownStartTime = Date.now();
+    gameStarted = true; // Set game as started so player can move monster
+    
+    // Reset player lives when starting a new game
+    playerLives = 10;
+    
+    // Reset game scores
+    sequenceScore = 0;
+    
+    // Generate a new sequence immediately at the start
+    generateNewSequence();
+    playerProgress = 0;
     
     // Reset monster position
     monster.x = canvas.width / 2;
     monster.y = canvas.height / 2;
     
-    // Reset wall positions with better spacing for 15 balls
+    // Initialize ball positions
     const positions = [
         // First row
         { x: canvas.width * 0.1, y: canvas.height * 0.1 },
@@ -1221,10 +1377,11 @@ function initializeGame() {
         { x: canvas.width * 0.9, y: canvas.height * 0.5 }
     ];
     
+    // Set up balls with visible but non-interactable state during countdown
     walls.forEach((wall, index) => {
         wall.x = positions[index].x;
         wall.y = positions[index].y;
-        wall.captured = false;
+        wall.captured = false; // Make balls visible but don't allow interaction
         wall.permanentlyCaught = false;
         wall.respawning = false;
         wall.opacity = 1;
@@ -1237,27 +1394,35 @@ function initializeGame() {
         wall.speedY = Math.sin(angle) * speed;
     });
     
-    // Add sounds.played tracking property if it doesn't exist
-    sounds.gameLose.played = false;
-    sounds.gameWin.played = false;
+    // Start countdown timer
+    countdownTimer();
 }
 
-// Add particle effects when collecting coins
-function addCoinParticles(x, y) {
-    const coinColors = walls.find(wall => wall.x === x && wall.y === y)?.color || '#FFDD00';
-    let colorRGB = '255, 221, 0'; // Default
+// Function to handle countdown timer
+function countdownTimer() {
+    const elapsedTime = Date.now() - countdownStartTime;
+    const secondsElapsed = Math.floor(elapsedTime / 1000);
     
-    if (coinColors.startsWith('#')) {
-        const r = parseInt(coinColors.slice(1, 3), 16);
-        const g = parseInt(coinColors.slice(3, 5), 16);
-        const b = parseInt(coinColors.slice(5, 7), 16);
-        colorRGB = `${r}, ${g}, ${b}`;
-    }
-    
-    for (let i = 0; i < 30; i++) {
-        const speed = 2 + Math.random() * 3;
-        const size = 3 + Math.random() * 4;
-        particles.push(new Particle(x, y, colorRGB, speed, size));
+    if (secondsElapsed >= countdownValue) {
+        // Countdown complete, start actual game
+        countdownActive = false;
+        
+        // Always reset the game start time to now to ensure a full minute
+        gameStartTime = Date.now();
+        
+        // Keep the current ball positions and player position
+        
+        // Play game start sound
+        playSound(sounds.gameStart);
+        
+        // Ensure background music is playing
+        if (musicPlaying && sounds.bgMusic.paused && !soundMuted) {
+            sounds.bgMusic.currentTime = 0;
+            sounds.bgMusic.play().catch(err => console.log("Music play error:", err));
+        }
+    } else {
+        // Continue countdown
+        requestAnimationFrame(countdownTimer);
     }
 }
 
