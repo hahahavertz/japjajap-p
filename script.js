@@ -367,25 +367,28 @@ class Monster {
         this.nextColorIndex = 1;
         this.colorTransition = 0; // 0 to 1 for color transition
         this.colorChangeSpeed = 0.01;
-        this.speed = 4.5;
+        this.speed = 5.5;
         this.trail = [];
         this.maxTrailLength = 15;
         this.rotation = 0;
         this.rotationSpeed = 0.03;
         this.outerGlowSize = 2.5; // Size multiplier for outer glow
         this.pulsePhase = 0;
+        
+        // GitHub theme colors for the monster
+        this.githubColors = ['#58a6ff', '#238636', '#f85149', '#c9d1d9', '#f0883e'];
     }
 
     // Get current color based on transition between two colors
     getCurrentColor() {
         if (this.colorTransition >= 1) {
             this.currentColorIndex = this.nextColorIndex;
-            this.nextColorIndex = (this.nextColorIndex + 1) % availableColors.length;
+            this.nextColorIndex = (this.nextColorIndex + 1) % this.githubColors.length;
             this.colorTransition = 0;
         }
         
-        const currentColor = this.hexToRgb(availableColors[this.currentColorIndex]);
-        const nextColor = this.hexToRgb(availableColors[this.nextColorIndex]);
+        const currentColor = this.hexToRgb(this.githubColors[this.currentColorIndex]);
+        const nextColor = this.hexToRgb(this.githubColors[this.nextColorIndex]);
         
         // Interpolate between colors
         const r = Math.floor(currentColor.r + (nextColor.r - currentColor.r) * this.colorTransition);
@@ -424,8 +427,8 @@ class Monster {
             ctx.arc(pos.x, pos.y, trailRadius, 0, Math.PI * 2);
             
             // Use earlier color in the transition for trail
-            const trailColorIndex = (this.currentColorIndex - Math.floor(ratio * 3) + availableColors.length) % availableColors.length;
-            const color = this.hexToRgb(availableColors[trailColorIndex]);
+            const trailColorIndex = (this.currentColorIndex - Math.floor(ratio * 3) + this.githubColors.length) % this.githubColors.length;
+            const color = this.hexToRgb(this.githubColors[trailColorIndex]);
             ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
             ctx.fill();
         });
@@ -727,8 +730,13 @@ function toggleSound() {
     soundToggleBtn.textContent = soundMuted ? "SOUND: OFF" : "SOUND: ON";
 }
 
-// Setup sound toggle button
-soundToggleBtn.addEventListener('click', toggleSound);
+// Setup sound toggle button - making it explicit that only mouse clicks should trigger this
+soundToggleBtn.addEventListener('click', function(e) {
+    // Only respond to actual mouse clicks, not keyboard events
+    if (e.isTrusted) {
+        toggleSound();
+    }
+});
 
 // Add sound effects with better organization
 const sounds = {
@@ -774,19 +782,24 @@ function toggleMusic() {
 
 // Setup keyboard controls
 window.addEventListener('keydown', (e) => {
-    if (!gameStarted && e.key === ' ') {
-        // Start game
-        gameStarted = true;
-        initializeGame();
-        return;
-    }
-    
-    if (gameOver && e.key === ' ') {
-        // Reset game and go back to title screen instead of restarting immediately
-        gameStarted = false;
-        gameOver = false;
-        particles = [];
-        return;
+    if (e.key === ' ') {
+        // Prevent default behavior for spacebar to avoid any unintended interactions
+        e.preventDefault();
+        
+        if (!gameStarted) {
+            // Start game
+            gameStarted = true;
+            initializeGame();
+            return;
+        }
+        
+        if (gameOver) {
+            // Reset game and go back to title screen instead of restarting immediately
+            gameStarted = false;
+            gameOver = false;
+            particles = [];
+            return;
+        }
     }
 
     if (gameOver || !gameStarted) return;
@@ -828,9 +841,9 @@ function drawInstructions() {
         
         // Draw sequence bar background
         const barGradient = ctx.createLinearGradient(0, 0, barWidth, barHeight);
-        barGradient.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
-        barGradient.addColorStop(0.5, 'rgba(50, 50, 70, 0.7)');
-        barGradient.addColorStop(1, 'rgba(0, 0, 0, 0.7)');
+        barGradient.addColorStop(0, 'rgba(13, 17, 23, 0.9)');
+        barGradient.addColorStop(0.5, 'rgba(22, 27, 34, 0.9)');
+        barGradient.addColorStop(1, 'rgba(13, 17, 23, 0.9)');
         
         ctx.fillStyle = barGradient;
         ctx.fillRect(0, 0, barWidth, barHeight);
@@ -888,7 +901,7 @@ function drawInstructions() {
         }
         
         // Draw sequence counter
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#c9d1d9';
         ctx.font = '16px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.fillText(`SEQUENCE: ${sequenceScore}/${SEQUENCE_WIN_SCORE}`, canvas.width / 2, barHeight + 25);
@@ -901,8 +914,8 @@ function drawInstructions() {
         
         // Create gradient for time display
         const timeGradient = ctx.createLinearGradient(10, 10 + barHeight, 150, 60 + barHeight);
-        timeGradient.addColorStop(0, 'rgba(0, 204, 255, 0.8)');
-        timeGradient.addColorStop(1, 'rgba(0, 255, 153, 0.8)');
+        timeGradient.addColorStop(0, 'rgba(88, 166, 255, 0.8)');
+        timeGradient.addColorStop(1, 'rgba(35, 134, 54, 0.8)');
         
         // Draw time background
         ctx.save();
@@ -910,22 +923,22 @@ function drawInstructions() {
         ctx.roundRect(10, 10 + barHeight, 140, 60, 15);
         ctx.fillStyle = timeGradient;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.strokeStyle = 'rgba(201, 209, 217, 0.6)';
         ctx.lineWidth = 3;
         ctx.stroke();
         
         // Draw time text with glow
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.7)';
+        ctx.shadowColor = 'rgba(201, 209, 217, 0.7)';
         ctx.shadowBlur = 10;
         
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#c9d1d9';
         ctx.font = '16px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.fillText(`TIME`, 80, 35 + barHeight);
         
         // Make time red if less than 10 seconds
         if (timeRemaining <= 10) {
-            ctx.fillStyle = '#FF3366';
+            ctx.fillStyle = '#f85149';
             // Pulsing effect for low time
             if (timeRemaining <= 5) {
                 const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.2;
@@ -946,10 +959,10 @@ function drawInstructions() {
         
         // Draw time in top-right corner
         ctx.save();
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.7)';
+        ctx.shadowColor = 'rgba(201, 209, 217, 0.7)';
         ctx.shadowBlur = 10;
         
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#c9d1d9';
         ctx.font = '16px "Press Start 2P"';
         ctx.textAlign = 'right';
         ctx.fillText(`TIME: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`, canvas.width - 20, 30);
@@ -957,7 +970,7 @@ function drawInstructions() {
         // Show prompt to collect any coin to start
         ctx.font = '14px "Press Start 2P"';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#33CCFF';
+        ctx.fillStyle = '#58a6ff';
         
         // Add pulse effect
         const pulse = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
@@ -969,12 +982,10 @@ function drawInstructions() {
     }
 
     if (gameOver) {
-        // Game is already over, no need to play sounds again
-        
         // Draw game over screen with gradient background
         const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-        gradient.addColorStop(1, 'rgba(50, 0, 50, 0.85)');
+        gradient.addColorStop(0, 'rgba(13, 17, 23, 0.9)');
+        gradient.addColorStop(1, 'rgba(22, 27, 34, 0.9)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -987,29 +998,29 @@ function drawInstructions() {
         
         if (gameWon) {
             // Victory panel colors
-            panelGradient.addColorStop(0, 'rgba(0, 255, 102, 0.3)');
-            panelGradient.addColorStop(0.5, 'rgba(255, 215, 0, 0.3)');
-            panelGradient.addColorStop(1, 'rgba(0, 204, 255, 0.3)');
+            panelGradient.addColorStop(0, 'rgba(35, 134, 54, 0.3)');
+            panelGradient.addColorStop(0.5, 'rgba(246, 213, 45, 0.3)');
+            panelGradient.addColorStop(1, 'rgba(88, 166, 255, 0.3)');
         } else {
             // Defeat panel colors
-            panelGradient.addColorStop(0, 'rgba(255, 0, 102, 0.3)');
-            panelGradient.addColorStop(0.5, 'rgba(102, 0, 255, 0.3)');
-            panelGradient.addColorStop(1, 'rgba(0, 204, 255, 0.3)');
+            panelGradient.addColorStop(0, 'rgba(248, 81, 73, 0.3)');
+            panelGradient.addColorStop(0.5, 'rgba(88, 166, 255, 0.3)');
+            panelGradient.addColorStop(1, 'rgba(248, 81, 73, 0.3)');
         }
         
         ctx.beginPath();
         ctx.roundRect(canvas.width/2 - 200, canvas.height/2 - 150, 400, 300, 20);
         ctx.fillStyle = panelGradient;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.strokeStyle = 'rgba(201, 209, 217, 0.5)';
         ctx.lineWidth = 3;
         ctx.stroke();
         
         // Add glow effect
         if (gameWon) {
-            ctx.shadowColor = 'rgba(0, 255, 128, 0.6)';
+            ctx.shadowColor = 'rgba(35, 134, 54, 0.6)';
         } else {
-            ctx.shadowColor = 'rgba(255, 0, 255, 0.6)';
+            ctx.shadowColor = 'rgba(248, 81, 73, 0.6)';
         }
         ctx.shadowBlur = 20;
         ctx.shadowOffsetX = 0;
@@ -1021,15 +1032,15 @@ function drawInstructions() {
         
         ctx.save();
         if (gameWon) {
-            ctx.shadowColor = 'rgba(0, 255, 0, 0.7)';
-            ctx.fillStyle = '#00FF66';
+            ctx.shadowColor = 'rgba(35, 134, 54, 0.7)';
+            ctx.fillStyle = '#238636';
             ctx.font = `${36 * pulse}px "Press Start 2P"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('YOU WIN!', canvas.width / 2, canvas.height / 2 - 60);
         } else {
-            ctx.shadowColor = 'rgba(255, 0, 0, 0.7)';
-            ctx.fillStyle = '#FF3366';
+            ctx.shadowColor = 'rgba(248, 81, 73, 0.7)';
+            ctx.fillStyle = '#f85149';
             ctx.font = `${36 * pulse}px "Press Start 2P"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1040,9 +1051,9 @@ function drawInstructions() {
         
         // Show sequences completed
         ctx.save();
-        ctx.shadowColor = 'rgba(255, 255, 0, 0.7)';
+        ctx.shadowColor = 'rgba(246, 213, 45, 0.7)';
         ctx.shadowBlur = 15;
-        ctx.fillStyle = '#33CCFF';
+        ctx.fillStyle = '#58a6ff';
         ctx.font = '18px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1050,10 +1061,10 @@ function drawInstructions() {
         ctx.restore();
 
         ctx.save();
-        ctx.shadowColor = 'rgba(0, 255, 255, 0.7)';
+        ctx.shadowColor = 'rgba(88, 166, 255, 0.7)';
         ctx.shadowBlur = 15;
         
-        ctx.fillStyle = '#00FFFF';
+        ctx.fillStyle = '#58a6ff';
         ctx.font = '18px "Press Start 2P"';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1093,19 +1104,19 @@ function animate() {
 function drawTitleScreen() {
     // Draw background gradient
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, '#1a1a2e');
-    gradient.addColorStop(1, '#16213e');
+    gradient.addColorStop(0, '#0d1117');
+    gradient.addColorStop(1, '#161b22');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw title with glow
     ctx.save();
-    ctx.shadowColor = 'rgba(255, 204, 0, 0.8)';
+    ctx.shadowColor = 'rgba(88, 166, 255, 0.8)';
     ctx.shadowBlur = 20;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     
-    ctx.fillStyle = '#FF3366';
+    ctx.fillStyle = '#58a6ff';
     ctx.font = '70px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1118,10 +1129,10 @@ function drawTitleScreen() {
     
     // Draw prompt with pulsing effect
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 204, 255, 0.7)';
+    ctx.shadowColor = 'rgba(35, 134, 54, 0.7)';
     ctx.shadowBlur = 15;
     
-    ctx.fillStyle = '#33CCFF';
+    ctx.fillStyle = '#238636';
     ctx.font = '24px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

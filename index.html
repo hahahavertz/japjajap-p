@@ -11,22 +11,14 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background: linear-gradient(135deg, #6600ff, #00ccff, #00ff99);
+            background: #0d1117;
             font-family: 'Press Start 2P', cursive;
-            animation: gradientAnimation 10s ease infinite;
-            background-size: 300% 300%;
-        }
-        
-        @keyframes gradientAnimation {
-            0% {background-position: 0% 50%}
-            50% {background-position: 100% 50%}
-            100% {background-position: 0% 50%}
         }
         
         canvas {
-            border: 6px solid #ff00cc;
+            border: 6px solid #238636;
             border-radius: 12px;
-            box-shadow: 0 0 30px rgba(255, 0, 255, 0.5);
+            box-shadow: 0 0 30px rgba(35, 134, 54, 0.5);
         }
 
         .game-container {
@@ -37,9 +29,9 @@
             position: absolute;
             top: 15px;
             right: 15px;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(13, 17, 23, 0.8);
             color: white;
-            border: 2px solid #ff00cc;
+            border: 2px solid #238636;
             border-radius: 8px;
             font-family: 'Press Start 2P', cursive;
             font-size: 12px;
@@ -47,11 +39,11 @@
             cursor: pointer;
             z-index: 10;
             transition: all 0.2s ease;
-            box-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+            box-shadow: 0 0 10px rgba(35, 134, 54, 0.5);
         }
 
         .sound-button:hover {
-            background: rgba(50, 50, 50, 0.8);
+            background: rgba(35, 134, 54, 0.3);
             transform: scale(1.05);
         }
     </style>
